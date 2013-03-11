@@ -1,4 +1,5 @@
 require 'cgi'
+require 'json'
 
 class GDash
   class SinatraApp < ::Sinatra::Base
@@ -194,14 +195,33 @@ class GDash
     end
 
     get '/:category/:dash/?*' do
+
       options = {}
       params["splat"] = params["splat"].first.split("/")
 
+      t_from = t_until = nil
+      if request.cookies["interval"]
+        cookie_date = JSON.parse(request.cookies["interval"], {:symbolize_names => true})
+        t_from = params[:from] || cookie_date[:from]
+        t_until = params[:until] || cookie_date[:until]
+      end
+
       case params["splat"][0]
-        when 'time'
-          options[:from] = params["splat"][1] || "-1hour"
-          options[:until] = params["splat"][2] || "now"
-        end
+      when 'time'
+        t_from = params["splat"][1] || "-1hour"
+        t_until = params["splat"][2] || "now"
+      when nil
+        redirect uri_to_interval({:from => t_from, :to => t_until}) if t_from 
+      end
+
+      options[:from] = t_from
+      options[:until] = t_until
+
+      response.set_cookie('interval',
+        :expires => Time.now + 60 * 60 * 24 * 14,
+        :path => "/",
+        :value => { "from" => t_from, "until" => t_until }.to_json
+      )
 
       if query_params[:print]
         options[:include_properties] = "print.yml"
@@ -210,6 +230,7 @@ class GDash
           :foreground_color => "black"
           }
       end
+
       options.merge!(query_params)
 
       if @top_level["#{params[:category]}"].list.include?(params[:dash])
@@ -235,12 +256,6 @@ class GDash
       include Rack::Utils
 
       alias_method :h, :escape_html
-
-      def link_to_interval(options)
-        qp=""; 
-      	params['p'].each {|k,v| qp+="?p[#{k}]=#{v}"} unless params['p'].nil?
-        "<a href=\"#{ [@prefix, params[:category], params[:dash], 'time', h(options[:from]), h(options[:to]), qp].join('/') }\">#{ h(options[:label]) }</a>"
-      end
 
       def query_params
         hash = {}
@@ -271,13 +286,32 @@ class GDash
         }.join('&')
       end
 
-      def link_to_print
+      def uri_to_interval(options)
+        uri = URI([@prefix, params[:category], params[:dash], 'time', h(options[:from]), h(options[:to])].join('/'))
+        uri.query = request.query_string unless request.query_string.empty? 
+        uri.to_s        
+      end
+
+      def link_to_interval(options)
+        "<a href=\"#{ uri_to_interval(options) }\">#{ h(options[:label]) }</a>"
+      end
+
+      def uri_to_print
         uri = URI.parse(request.path)
         new_query_ar = CGI.parse(request.query_string).merge! "print" => "1"
         uri.query = query_params_encode(new_query_ar)
         uri.to_s
       end
     
+      def fmt_for_select_date(date, default)
+        result = ""
+        if date.nil? 
+          result = default
+        else 
+          result = DateTime.parse(date).strftime("%Y-%m-%d %H:%M")
+        end
+        return result
+      end
     end
   end
 end
