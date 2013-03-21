@@ -8,7 +8,7 @@ class GDash
                      :graph_height => nil,
                      :graph_from => nil,
                      :graph_until => nil, 
-                     :sort_graphs_by => [:file] }
+                     :sort_graphs_by => [:filename] }
 
       @properties[:short_name] = short_name
       @properties[:graph_templates] = graph_templates
